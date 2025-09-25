@@ -1,0 +1,18 @@
+server:
+    addr: ":8080"
+    admin_api_key: "changeme-admin-key"
+
+
+db:
+  dsn: "postgres://postgres:postgres@localhost:5432/raalisence?sslmode=disable"
+
+
+signing:
+  private_key_pem: |
+    -----BEGIN EC PRIVATE KEY-----
+    # paste generated dev key here
+    -----END EC PRIVATE KEY-----
+    public_key_pem: |
+    -----BEGIN PUBLIC KEY-----
+    # matching public key here
+    -----END PUBLIC KEY-----

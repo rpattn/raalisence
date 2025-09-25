@@ -1,0 +1,14 @@
+# sqlc.yaml
+version: "2"
+sql:
+  - engine: postgresql
+    queries: "internal/db/queries"
+    schema: "internal/db/migrations"
+    gen:
+      go:
+        package: "db"
+        out: "internal/db/sqlc"
+        sql_package: "database/sql"
+        emit_interface: false
+        emit_pointers_for_null_types: true
+        emit_json_tags: true
