@@ -1,0 +1,45 @@
+# Binaries
+/raalisence
+/bin/
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go
+*.log
+*.cover
+*.prof
+coverage.out
+
+# Dependency dirs
+/vendor/
+/go.sum
+
+# IDE/editor
+.idea/
+.vscode/
+*.swp
+*~
+
+# Env & config
+.env
+.env.*
+config.yaml
+/configs/
+/tmp/
+
+# DB data
+/dbdata/
+
+# Generated
+/internal/db/sqlc/
+/tmp/raal_keys.env
+
+# OS files
+.DS_Store
+Thumbs.db

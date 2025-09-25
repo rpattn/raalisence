@@ -1,0 +1,34 @@
+# Ignore everything by default, then whitelist what we need
+**
+
+# keep source
+!cmd/
+!internal/
+!config.example.yaml
+!go.mod
+!go.sum
+!sqlc.yaml
+!Dockerfile
+!README.md
+!scripts/
+!internal/db/migrations/
+!internal/db/queries/
+
+# ignore other configs, secrets, local builds
+config.yaml
+.env*
+configs/
+raalisence
+bin/
+*.test
+*.out
+
+# IDE/editor
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

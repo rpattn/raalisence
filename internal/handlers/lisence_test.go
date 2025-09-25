@@ -11,6 +11,9 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+
+	"github.com/rpattn/raalisence/internal/config"
+	"github.com/rpattn/raalisence/internal/crypto"
 )
 
 // Integration-ish test; requires TEST_DB_DSN env to be set.
@@ -30,19 +33,19 @@ func TestIssueValidateFlow(t *testing.T) {
 
 	// naive create table for test (ok if already exists)
 	_, _ = db.Exec(`create table if not exists licenses (
-id uuid primary key,
-license_key text unique not null,
-customer text not null,
-machine_id text not null,
-features jsonb not null default '{}',
-expires_at timestamptz not null,
-revoked boolean not null default false,
-last_seen_at timestamptz null,
-created_at timestamptz not null default now(),
-updated_at timestamptz not null default now()
-)`)
+		id uuid primary key,
+		license_key text unique not null,
+		customer text not null,
+		machine_id text not null,
+		features jsonb not null default '{}',
+		expires_at timestamptz not null,
+		revoked boolean not null default false,
+		last_seen_at timestamptz null,
+		created_at timestamptz not null default now(),
+		updated_at timestamptz not null default now()
+	)`)
 
-	cfg := testConfig()
+	cfg := testConfig(t)
 
 	// issue
 	ir := IssueRequest{Customer: "Acme", MachineID: "MID1", ExpiresAt: time.Now().Add(24 * time.Hour)}
@@ -72,9 +75,16 @@ updated_at timestamptz not null default now()
 }
 
 // minimal config with ephemeral keys for tests.
-func testConfig() *struct {
-	Server  struct{ Addr, AdminAPIKey string }
-	DB      struct{ DSN string }
-	Signing struct{ PrivateKeyPEM, PublicKeyPEM string }
-} {
+func testConfig(t *testing.T) *config.Config {
+	t.Helper()
+	priv, pub, err := crypto.GeneratePEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{}
+	cfg.Server.AdminAPIKey = "test-admin"
+	cfg.Server.Addr = ":0"
+	cfg.Signing.PrivateKeyPEM = priv
+	cfg.Signing.PublicKeyPEM = pub
+	return cfg
 }

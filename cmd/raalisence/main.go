@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
+
 	"github.com/rpattn/raalisence/internal/config"
 	"github.com/rpattn/raalisence/internal/server"
 )
