@@ -1,0 +1,221 @@
+<!-- static/admin.html -->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>raalisence – Admin/Test Panel</title>
+    <style>
+        body {
+            font: 14px system-ui, -apple-system, Segoe UI, Roboto, Arial;
+            margin: 20px;
+        }
+
+        h1 {
+            margin: 0 0 12px;
+        }
+
+        .row {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .card {
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 16px;
+            width: 360px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin: 8px 0 4px;
+        }
+
+        input,
+        textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+        }
+
+        button {
+            margin-top: 10px;
+            padding: 8px 10px;
+            border: 0;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        button.primary {
+            background: #111;
+            color: #fff;
+        }
+
+        .muted {
+            color: #666;
+        }
+
+        pre {
+            white-space: pre-wrap;
+            word-break: break-word;
+            background: #f8f8f8;
+            padding: 8px;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>raalisence – Admin/Test Panel</h1>
+    <p class="muted">Use this page to issue, revoke, validate licenses and send heartbeats against your running server.
+    </p>
+
+    <div class="card" style="width:100%; max-width:740px;">
+        <h3>Settings</h3>
+        <label>Server Base URL</label>
+        <input id="baseUrl" placeholder="http://localhost:8080" />
+
+        <label>Admin API Key (Bearer)</label>
+        <input id="adminKey" type="password" placeholder="dev-admin-key" />
+
+        <div style="display:flex; gap:10px; margin-top:10px;">
+            <button class="primary" onclick="saveSettings()">Save</button>
+            <button onclick="clearOutput()">Clear Output</button>
+            <a href="/healthz" target="_blank"><button>Health</button></a>
+        </div>
+    </div>
+
+    <div class="row" style="margin-top:16px;">
+        <div class="card">
+            <h3>Issue License (admin)</h3>
+            <label>Customer</label>
+            <input id="issueCustomer" placeholder="Acme Corp" />
+            <label>Machine ID</label>
+            <input id="issueMachine" placeholder="MID-123" />
+            <label>Expires At (RFC3339)</label>
+            <input id="issueExpires" placeholder="2026-01-01T00:00:00Z" />
+            <label>Features (JSON)</label>
+            <textarea id="issueFeatures" rows="4">{"seats":5}</textarea>
+            <button class="primary" onclick="issue()">Issue</button>
+        </div>
+
+        <div class="card">
+            <h3>Validate License</h3>
+            <label>License Key</label>
+            <input id="valKey" placeholder="uuid" />
+            <label>Machine ID</label>
+            <input id="valMachine" placeholder="MID-123" />
+            <button class="primary" onclick="validateKey()">Validate</button>
+        </div>
+
+        <div class="card">
+            <h3>Revoke License (admin)</h3>
+            <label>License Key</label>
+            <input id="revKey" placeholder="uuid" />
+            <button class="primary" onclick="revokeKey()">Revoke</button>
+        </div>
+
+        <div class="card">
+            <h3>Heartbeat</h3>
+            <label>License Key</label>
+            <input id="hbKey" placeholder="uuid" />
+            <button class="primary" onclick="heartbeat()">Send Heartbeat</button>
+        </div>
+    </div>
+
+    <div class="card" style="width:100%; margin-top:16px;">
+        <h3>Output</h3>
+        <pre id="out"></pre>
+    </div>
+
+    <script>
+        const $ = (id) => document.getElementById(id);
+        const out = $("out");
+
+        function log(title, data) {
+            const ts = new Date().toISOString();
+            out.textContent = `${ts} — ${title}` + JSON.stringify(data, null, 2) + " " + out.textContent;
+        }
+
+        function loadSettings() {
+            $("baseUrl").value = localStorage.getItem("raal.baseUrl") || location.origin;
+            $("adminKey").value = localStorage.getItem("raal.adminKey") || "";
+        }
+
+        function saveSettings() {
+            localStorage.setItem("raal.baseUrl", $("baseUrl").value.trim());
+            localStorage.setItem("raal.adminKey", $("adminKey").value.trim());
+            log("settings.saved", { baseUrl: $("baseUrl").value, adminKeySet: $("adminKey").value.length > 0 });
+        }
+
+        function clearOutput() { out.textContent = ""; }
+
+        async function issue() {
+            try {
+                const url = new URL("/api/v1/licenses/issue", $("baseUrl").value).toString();
+                const body = {
+                    customer: $("issueCustomer").value.trim(),
+                    machine_id: $("issueMachine").value.trim(),
+                    expires_at: $("issueExpires").value.trim(),
+                    features: JSON.parse($("issueFeatures").value || "{}")
+                };
+                const res = await fetch(url, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": "Bearer " + ($("adminKey").value || "")
+                    },
+                    body: JSON.stringify(body)
+                });
+                const json = await res.json().catch(() => ({ raw: res.statusText }));
+                log("licenses.issue", { status: res.status, json });
+                if (res.ok && json.license_key) {
+                    $("valKey").value = json.license_key;
+                    $("revKey").value = json.license_key;
+                    $("hbKey").value = json.license_key;
+                    $("valMachine").value = json.machine_id;
+                }
+            } catch (e) { log("error.issue", { error: String(e) }); }
+        }
+
+        async function validateKey() {
+            try {
+                const url = new URL("/api/v1/licenses/validate", $("baseUrl").value).toString();
+                const body = { license_key: $("valKey").value.trim(), machine_id: $("valMachine").value.trim() };
+                const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+                const json = await res.json().catch(() => ({ raw: res.statusText }));
+                log("licenses.validate", { status: res.status, json });
+            } catch (e) { log("error.validate", { error: String(e) }); }
+        }
+
+        async function revokeKey() {
+            try {
+                const url = new URL("/api/v1/licenses/revoke", $("baseUrl").value).toString();
+                const body = { license_key: $("revKey").value.trim() };
+                const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + ($("adminKey").value || "") }, body: JSON.stringify(body) });
+                const json = await res.json().catch(() => ({ raw: res.statusText }));
+                log("licenses.revoke", { status: res.status, json });
+            } catch (e) { log("error.revoke", { error: String(e) }); }
+        }
+
+        async function heartbeat() {
+            try {
+                const url = new URL("/api/v1/licenses/heartbeat", $("baseUrl").value).toString();
+                const body = { license_key: $("hbKey").value.trim() };
+                const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+                const json = await res.json().catch(() => ({ raw: res.statusText }));
+                log("licenses.heartbeat", { status: res.status, json });
+            } catch (e) { log("error.heartbeat", { error: String(e) }); }
+        }
+
+        loadSettings();
+    </script>
+</body>
+
+</html>
