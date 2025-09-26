@@ -1,0 +1,8 @@
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: raalisence-cert
+spec:
+  # Replace with your domain(s); DNS must point to the Ingress IP
+  domains:
+    - example.com

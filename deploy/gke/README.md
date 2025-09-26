@@ -13,6 +13,11 @@
 # 4) service
 `kubectl apply -f deploy/gke/04-service.yaml`
 
+# 5 ) Ingress
+Optional `kubectl apply -f deploy/gke/06-managed-cert.yaml`
+Optional `kubectl apply -f deploy/gke/07-frontendconfig.yaml`
+`kubectl apply -f deploy/gke/05-ingress-https.yaml`
+
 ## Notes
 
 Ensure GKE StorageClass name matches standard-rwo (use `kubectl get storageclass` to confirm; change if needed).

@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: raalisence
+  labels:
+    app: raalisence
+  annotations:
+    kubernetes.io/ingress.class: "gce"
+    networking.gke.io/managed-certificates: raalisence-cert
+    networking.gke.io/v1beta1.FrontendConfig: raalisence-frontendconfig
+spec:
+  rules:
+    - host: example.com   # must match your ManagedCertificate domain
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: raalisence
+                port:
+                  number: 80
