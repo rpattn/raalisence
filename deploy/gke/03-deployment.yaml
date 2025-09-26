@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: raalisence
+  labels:
+    app: raalisence
+spec:
+  replicas: 1 # SQLite: single-writer
+  selector:
+    matchLabels:
+      app: raalisence
+  template:
+    metadata:
+      labels:
+        app: raalisence
+    spec:
+      securityContext:
+        fsGroup: 2000
+      volumes:
+        - name: db
+          persistentVolumeClaim:
+            claimName: raalisence-sqlite-pvc
+        - name: migrations
+          configMap:
+            name: raalisence-sqlite-migrations
+      initContainers:
+        - name: migrate-sqlite
+          image: bitnami/sqlite:latest
+          command: ["/bin/sh","-c"]
+          args:
+            - |
+              set -e
+              echo "Applying SQLite migrations..."
+              sqlite3 /data/raalisence.db < /migrations/0001_init.sql
+              echo "Migrations applied."
+          volumeMounts:
+            - name: db
+              mountPath: /data
+            - name: migrations
+              mountPath: /migrations
+      containers:
+        - name: raalisence
+          image: your-registry/raalisence:latest   #replace with app registry docker image
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: RAAL_SERVER_ADDR
+              value: ":8080"
+            - name: RAAL_DB_DRIVER
+              value: "sqlite3"
+            - name: RAAL_DB_PATH
+              value: "/data/raalisence.db"
+            - name: RAAL_SERVER_ADMIN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: raalisence-secrets
+                  key: admin_api_key
+            - name: RAAL_SIGNING_PRIVATE_KEY_PEM
+              valueFrom:
+                secretKeyRef:
+                  name: raalisence-secrets
+                  key: signing_private_key_pem
+            - name: RAAL_SIGNING_PUBLIC_KEY_PEM
+              valueFrom:
+                secretKeyRef:
+                  name: raalisence-secrets
+                  key: signing_public_key_pem
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          volumeMounts:
+            - name: db
+              mountPath: /data
