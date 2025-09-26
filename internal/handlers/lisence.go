@@ -45,6 +45,20 @@ type ValidateResponse struct {
 	Reason    string    `json:"reason,omitempty"`
 }
 
+type LicenseSummary struct {
+	ID         string  `json:"id"`
+	LicenseKey string  `json:"license_key"`
+	Customer   string  `json:"customer"`
+	MachineID  string  `json:"machine_id"`
+	ExpiresAt  string  `json:"expires_at"`
+	Revoked    bool    `json:"revoked"`
+	LastSeenAt *string `json:"last_seen_at,omitempty"`
+}
+
+type ListLicensesResponse struct {
+	Licenses []LicenseSummary `json:"licenses"`
+}
+
 func IssueLicense(db *sql.DB, cfg *config.Config) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -240,6 +254,59 @@ func Heartbeat(db *sql.DB) http.Handler {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"ok":true}`))
+	})
+}
+
+func ListLicenses(db *sql.DB, cfg *config.Config) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		ctx := r.Context()
+		rows, err := db.QueryContext(ctx, `select id, license_key, customer, machine_id, expires_at, revoked, last_seen_at from licenses order by created_at desc`)
+		if err != nil {
+			internalError(w, "licenses.list.query", err)
+			return
+		}
+		defer rows.Close()
+
+		resp := ListLicensesResponse{}
+		for rows.Next() {
+			var sum LicenseSummary
+			if cfg != nil && cfg.DB.Driver == "sqlite3" {
+				var expires string
+				var lastSeen sql.NullString
+				if err := rows.Scan(&sum.ID, &sum.LicenseKey, &sum.Customer, &sum.MachineID, &expires, &sum.Revoked, &lastSeen); err != nil {
+					internalError(w, "licenses.list.scan", err)
+					return
+				}
+				sum.ExpiresAt = expires
+				if lastSeen.Valid && lastSeen.String != "" {
+					ls := lastSeen.String
+					sum.LastSeenAt = &ls
+				}
+			} else {
+				var expires time.Time
+				var lastSeen sql.NullTime
+				if err := rows.Scan(&sum.ID, &sum.LicenseKey, &sum.Customer, &sum.MachineID, &expires, &sum.Revoked, &lastSeen); err != nil {
+					internalError(w, "licenses.list.scan", err)
+					return
+				}
+				sum.ExpiresAt = expires.UTC().Format(time.RFC3339Nano)
+				if lastSeen.Valid {
+					ls := lastSeen.Time.UTC().Format(time.RFC3339Nano)
+					sum.LastSeenAt = &ls
+				}
+			}
+			resp.Licenses = append(resp.Licenses, sum)
+		}
+		if err := rows.Err(); err != nil {
+			internalError(w, "licenses.list.rows", err)
+			return
+		}
+		writeJSON(w, http.StatusOK, resp)
 	})
 }
 

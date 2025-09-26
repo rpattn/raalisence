@@ -12,6 +12,7 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/rpattn/raalisence/internal/config"
 	"github.com/rpattn/raalisence/internal/crypto"
@@ -87,6 +88,60 @@ func TestDecodeJSONBodyTooLarge(t *testing.T) {
 	}
 	if rr.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("expected status %d got %d", http.StatusRequestEntityTooLarge, rr.Code)
+	}
+}
+
+func TestListLicensesSQLite(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	_, err = db.Exec(`create table licenses (
+                id text primary key,
+                license_key text unique not null,
+                customer text not null,
+                machine_id text not null,
+                features text not null default '{}',
+                expires_at text not null,
+                revoked integer not null default 0,
+                last_seen_at text null,
+                created_at text not null default current_timestamp,
+                updated_at text not null default current_timestamp
+        )`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = db.Exec(`insert into licenses (id, license_key, customer, machine_id, features, expires_at, revoked) values
+                ('id-1', 'key-1', 'Acme', 'MID-1', '{}', '2025-01-01T00:00:00Z', 0),
+                ('id-2', 'key-2', 'Beta', 'MID-2', '{}', '2026-01-01T00:00:00Z', 1)
+        `)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := testConfig(t)
+	cfg.DB.Driver = "sqlite3"
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/licenses", nil)
+	rr := httptest.NewRecorder()
+	ListLicenses(db, cfg).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200 got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp ListLicensesResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp.Licenses) != 2 {
+		t.Fatalf("expected 2 licenses got %d", len(resp.Licenses))
+	}
+	if resp.Licenses[0].ID == "" || resp.Licenses[0].LicenseKey == "" {
+		t.Fatal("expected license summary to include id and license_key")
 	}
 }
 
