@@ -52,11 +52,11 @@ spec:
               value: "sqlite3"
             - name: RAAL_DB_PATH
               value: "/data/raalisence.db"
-            - name: RAAL_SERVER_ADMIN_API_KEY
+            - name: RAAL_SERVER_ADMIN_API_KEY_HASHES
               valueFrom:
                 secretKeyRef:
                   name: raalisence-secrets
-                  key: admin_api_key
+                  key: admin_api_key_hashes
             - name: RAAL_SIGNING_PRIVATE_KEY_PEM
               valueFrom:
                 secretKeyRef:

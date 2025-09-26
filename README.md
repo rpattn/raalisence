@@ -38,26 +38,36 @@ Minimal dependencies, clear file layout, tests, and helper scripts.
 
 Build: `docker build -t your-registry/raalisence:pgx .`
 
-Run: `docker run --rm -p 8080:8080 \
+Run:
+
+```bash
+ADMIN_HASH="$(go run ./scripts/hash-admin-key.go dev-admin-key)"
+docker run --rm -p 8080:8080 \
   -e RAAL_DB_DRIVER=pgx \
   -e RAAL_DB_DSN="postgres://postgres:postgres@host.docker.internal:5432/raalisence?sslmode=disable" \
-  -e RAAL_SERVER_ADMIN_API_KEY="dev-admin-key" \
+  -e RAAL_SERVER_ADMIN_API_KEY_HASHES="$ADMIN_HASH" \
   -e RAAL_SIGNING_PRIVATE_KEY_PEM="$(cat priv.pem)" \
   -e RAAL_SIGNING_PUBLIC_KEY_PEM="$(cat pub.pem)" \
-  your-registry/raalisence:pgx`
+  your-registry/raalisence:pgx
+```
 
 
 ### SQLite
 
 Build: `docker build -t your-registry/raalisence:sqlite .`
-Run: `docker run --rm -p 8080:8080 \
+Run:
+
+```bash
+ADMIN_HASH="$(go run ./scripts/hash-admin-key.go dev-admin-key)"
+docker run --rm -p 8080:8080 \
   -v "$PWD/data:/data" \
   -e RAAL_DB_DRIVER=sqlite3 \
   -e RAAL_DB_PATH=/data/raalisence.db \
-  -e RAAL_SERVER_ADMIN_API_KEY="dev-admin-key" \
+  -e RAAL_SERVER_ADMIN_API_KEY_HASHES="$ADMIN_HASH" \
   -e RAAL_SIGNING_PRIVATE_KEY_PEM="$(cat priv.pem)" \
   -e RAAL_SIGNING_PUBLIC_KEY_PEM="$(cat pub.pem)" \
-  your-registry/raalisence:sqlite`
+  your-registry/raalisence:sqlite
+```
 
 
 ### To Docker.io
@@ -84,7 +94,7 @@ e.g. with Koyeb
   --env RAAL_DB_DRIVER=sqlite3 \
   --env RAAL_DB_PATH=/data/raalisence.db \
   --env RAAL_SERVER_ADDR=":8080" \
-  --env RAAL_SERVER_ADMIN_API_KEY="change-me" \
+  --env RAAL_SERVER_ADMIN_API_KEY_HASHES="$(go run ./scripts/hash-admin-key.go change-me)" \
   --secret RAAL_SIGNING_PRIVATE_KEY_PEM=raal-priv \
   --secret RAAL_SIGNING_PUBLIC_KEY_PEM=raal-pub \
   --volumes raal-sqlite:/data`

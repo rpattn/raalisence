@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 
 	"github.com/rpattn/raalisence/internal/config"
 	"github.com/rpattn/raalisence/internal/crypto"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // Integration-ish test; requires TEST_DB_DSN env to be set.
@@ -51,7 +53,7 @@ func TestIssueValidateFlow(t *testing.T) {
 	ir := IssueRequest{Customer: "Acme", MachineID: "MID1", ExpiresAt: time.Now().Add(24 * time.Hour)}
 	b, _ := json.Marshal(ir)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/licenses/issue", bytes.NewReader(b))
-	req.Header.Set("Authorization", "Bearer "+cfg.Server.AdminAPIKey)
+	req.Header.Set("Authorization", "Bearer test-admin")
 	rw := httptest.NewRecorder()
 	IssueLicense(db, cfg).ServeHTTP(rw, req)
 	if rw.Code != http.StatusOK {
@@ -74,6 +76,20 @@ func TestIssueValidateFlow(t *testing.T) {
 	}
 }
 
+func TestDecodeJSONBodyTooLarge(t *testing.T) {
+	payload := `{"data":"` + strings.Repeat("a", int(maxJSONBody)) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(payload))
+	rr := httptest.NewRecorder()
+
+	var dst map[string]any
+	if decodeJSON(rr, req, &dst) {
+		t.Fatal("expected decodeJSON to fail for oversized payload")
+	}
+	if rr.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status %d got %d", http.StatusRequestEntityTooLarge, rr.Code)
+	}
+}
+
 // minimal config with ephemeral keys for tests.
 func testConfig(t *testing.T) *config.Config {
 	t.Helper()
@@ -82,7 +98,11 @@ func testConfig(t *testing.T) *config.Config {
 		t.Fatal(err)
 	}
 	cfg := &config.Config{}
-	cfg.Server.AdminAPIKey = "test-admin"
+	hash, err := bcrypt.GenerateFromPassword([]byte("test-admin"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Server.AdminAPIKeyHashes = []string{string(hash)}
 	cfg.Server.Addr = ":0"
 	cfg.Signing.PrivateKeyPEM = priv
 	cfg.Signing.PublicKeyPEM = pub

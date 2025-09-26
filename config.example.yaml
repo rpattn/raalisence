@@ -1,20 +1,21 @@
 server:
-    addr: ":8080"
-    admin_api_key: "changeme-admin-key"
-
+  addr: ":8080"
+  # bcrypt hashes of admin API tokens. Generate with:
+  #   go run ./scripts/hash-admin-key.go <token>
+  admin_api_key_hashes:
+    - "$2a$10$exampleplaceholderhashforadmin"
 
 db:
   driver: "pgx"   # or "sqlite3"
   dsn: "postgres://postgres:postgres@localhost:5432/raalisence?sslmode=disable"
   path: "./raalisence.db"   # if using sqlite3
 
-
 signing:
   private_key_pem: |
     -----BEGIN EC PRIVATE KEY-----
     # paste generated dev key here
     -----END EC PRIVATE KEY-----
-    public_key_pem: |
+  public_key_pem: |
     -----BEGIN PUBLIC KEY-----
     # matching public key here
     -----END PUBLIC KEY-----

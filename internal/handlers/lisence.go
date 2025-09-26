@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"time"
 
@@ -11,6 +12,8 @@ import (
 	"github.com/rpattn/raalisence/internal/config"
 	"github.com/rpattn/raalisence/internal/crypto"
 )
+
+const maxJSONBody = 64 * 1024 // 64KiB upper bound for JSON payloads
 
 type IssueRequest struct {
 	Customer  string         `json:"customer"`
@@ -49,8 +52,7 @@ func IssueLicense(db *sql.DB, cfg *config.Config) http.Handler {
 			return
 		}
 		var req IssueRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad json", http.StatusBadRequest)
+		if !decodeJSON(w, r, &req) {
 			return
 		}
 		if req.Customer == "" || req.MachineID == "" || req.ExpiresAt.IsZero() {
@@ -72,13 +74,13 @@ func IssueLicense(db *sql.DB, cfg *config.Config) http.Handler {
 		}
 		_, err := db.ExecContext(ctx, insert, uuid.New(), licenseKey, req.Customer, req.MachineID, string(featuresJSON), expVal)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			internalError(w, "issue.insert", err)
 			return
 		}
 
 		priv, err := cfg.PrivateKey()
 		if err != nil {
-			http.Error(w, "signing key error: "+err.Error(), http.StatusInternalServerError)
+			internalError(w, "issue.private_key", err)
 			return
 		}
 
@@ -92,7 +94,7 @@ func IssueLicense(db *sql.DB, cfg *config.Config) http.Handler {
 		}
 		sig, err := crypto.SignJSON(priv, payload)
 		if err != nil {
-			http.Error(w, "sign error: "+err.Error(), http.StatusInternalServerError)
+			internalError(w, "issue.sign", err)
 			return
 		}
 
@@ -119,8 +121,7 @@ func RevokeLicense(db *sql.DB) http.Handler {
 			return
 		}
 		var req ValidateRequest // re-use with license_key
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad json", http.StatusBadRequest)
+		if !decodeJSON(w, r, &req) {
 			return
 		}
 		if req.LicenseKey == "" {
@@ -130,7 +131,7 @@ func RevokeLicense(db *sql.DB) http.Handler {
 		ctx := r.Context()
 		res, err := db.ExecContext(ctx, `update licenses set revoked=true, updated_at=CURRENT_TIMESTAMP where license_key=$1`, req.LicenseKey)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			internalError(w, "revoke.update", err)
 			return
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
@@ -149,8 +150,7 @@ func ValidateLicense(db *sql.DB, cfg *config.Config) http.Handler {
 			return
 		}
 		var req ValidateRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad json", http.StatusBadRequest)
+		if !decodeJSON(w, r, &req) {
 			return
 		}
 		if req.LicenseKey == "" || req.MachineID == "" {
@@ -172,7 +172,7 @@ func ValidateLicense(db *sql.DB, cfg *config.Config) http.Handler {
 					writeJSON(w, http.StatusOK, ValidateResponse{Valid: false, Reason: "unknown license"})
 					return
 				}
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				internalError(w, "validate.lookup", err)
 				return
 			}
 			// parse with RFC3339Nano then fall back to RFC3339
@@ -193,7 +193,7 @@ func ValidateLicense(db *sql.DB, cfg *config.Config) http.Handler {
 					writeJSON(w, http.StatusOK, ValidateResponse{Valid: false, Reason: "unknown license"})
 					return
 				}
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				internalError(w, "validate.lookup", err)
 				return
 			}
 		}
@@ -221,8 +221,7 @@ func Heartbeat(db *sql.DB) http.Handler {
 			return
 		}
 		var req ValidateRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad json", http.StatusBadRequest)
+		if !decodeJSON(w, r, &req) {
 			return
 		}
 		if req.LicenseKey == "" {
@@ -232,7 +231,7 @@ func Heartbeat(db *sql.DB) http.Handler {
 		ctx := r.Context()
 		res, err := db.ExecContext(ctx, `update licenses set last_seen_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP where license_key=$1`, req.LicenseKey)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			internalError(w, "heartbeat.update", err)
 			return
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
@@ -244,8 +243,35 @@ func Heartbeat(db *sql.DB) http.Handler {
 	})
 }
 
+func internalError(w http.ResponseWriter, op string, err error) {
+	log.Printf("handler error op=%s err=%v", op, err)
+	http.Error(w, "internal server error", http.StatusInternalServerError)
+}
+
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
+	limited := http.MaxBytesReader(w, r.Body, maxJSONBody)
+	defer limited.Close()
+
+	dec := json.NewDecoder(limited)
+	if err := dec.Decode(v); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			log.Printf("request body too large path=%s remote=%s", r.URL.Path, r.RemoteAddr)
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return false
+		}
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return false
+	}
+	if dec.More() {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return false
+	}
+	return true
 }

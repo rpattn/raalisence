@@ -13,6 +13,7 @@ command -v go      >/dev/null || { echo "Go toolchain is required"; exit 1; }
 : "${RAAL_DB_PATH:=./raalisence.db}"
 : "${RAAL_DB_DSN:=postgres://postgres:postgres@localhost:5433/raalisence?sslmode=disable}"
 : "${RAAL_SERVER_ADMIN_API_KEY:=dev-admin-key}"
+: "${RAAL_SERVER_ADMIN_API_KEY_HASHES:=}"
 
 echo "RAAL_SERVER_ADDR=$RAAL_SERVER_ADDR"
 echo "DB Driver: $RAAL_DB_DRIVER"
@@ -21,7 +22,11 @@ if [[ "$RAAL_DB_DRIVER" == "sqlite3" ]]; then
 else
   echo "DB DSN: $RAAL_DB_DSN"
 fi
-echo "RAAL_SERVER_ADMIN_API_KEY set: $([[ -n "${RAAL_SERVER_ADMIN_API_KEY}" ]] && echo yes || echo no)"
+if [[ -z "${RAAL_SERVER_ADMIN_API_KEY_HASHES}" && -n "${RAAL_SERVER_ADMIN_API_KEY}" ]]; then
+  echo "Deriving bcrypt hash for configured RAAL_SERVER_ADMIN_API_KEY…"
+  RAAL_SERVER_ADMIN_API_KEY_HASHES="$(go run ./scripts/hash-admin-key.go "${RAAL_SERVER_ADMIN_API_KEY}")"
+fi
+echo "Admin key hashes configured: $([[ -n "${RAAL_SERVER_ADMIN_API_KEY_HASHES}" ]] && echo yes || echo no)"
 
 # --- helper: base64 decode (Linux/macOS) ---
 b64dec() {
@@ -90,7 +95,7 @@ exec env \
   RAAL_DB_DRIVER="$RAAL_DB_DRIVER" \
   RAAL_DB_DSN="$RAAL_DB_DSN" \
   RAAL_DB_PATH="$RAAL_DB_PATH" \
-  RAAL_SERVER_ADMIN_API_KEY="$RAAL_SERVER_ADMIN_API_KEY" \
+  RAAL_SERVER_ADMIN_API_KEY_HASHES="$RAAL_SERVER_ADMIN_API_KEY_HASHES" \
   RAAL_SIGNING_PRIVATE_KEY_PEM="$RAAL_SIGNING_PRIVATE_KEY_PEM" \
   RAAL_SIGNING_PUBLIC_KEY_PEM="$RAAL_SIGNING_PUBLIC_KEY_PEM" \
   go run ./cmd/raalisence

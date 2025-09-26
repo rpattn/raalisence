@@ -4,8 +4,6 @@ import (
 	"log"
 	"net/http"
 	"time"
-
-	"github.com/rpattn/raalisence/internal/config"
 )
 
 // statusWriter captures the status code and bytes written.
@@ -46,15 +44,4 @@ func Logging(next http.Handler) http.Handler {
 	})
 }
 
-// WithAdminKey requires header: Authorization: Bearer <admin_api_key>
-func WithAdminKey(cfg *config.Config, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ah := r.Header.Get("Authorization")
-		const pfx = "Bearer "
-		if len(ah) <= len(pfx) || !cfg.AdminKeyOK(ah[len(pfx):]) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
+// Admin authentication middleware lives in admin_auth.go.
