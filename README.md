@@ -75,7 +75,9 @@ docker run --rm -p 8080:8080 \
 `docker build -t docker.io/rpattn/raalisence:sqlite .`
 `docker push docker.io/rpattn/raalisence:sqlite`
 
-## Generic hosting service
+## Hosting
+
+***Note: Serve the app behind a TLS proxy or similar to prevent leaking of api keys***
 
 ### SQLite 
 
