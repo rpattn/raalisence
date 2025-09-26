@@ -60,7 +60,37 @@ Run: `docker run --rm -p 8080:8080 \
   your-registry/raalisence:sqlite`
 
 
+### To Docker.io
 
+`docker build -t docker.io/rpattn/raalisence:sqlite .`
+`docker push docker.io/rpattn/raalisence:sqlite`
+
+## Generic hosting service
+
+### SQLite 
+
+- 1) Setup volume
+
+e.g. with Koyeb `koyeb volume create raal-sqlite --size 5 --region fra`
+
+- 2) Config app
+
+e.g. with Koyeb 
+`koyeb service create raalisence/web \
+  --image ghcr.io/you/raalisence:sqlite \
+  --regions fra \
+  --instance-type micro \
+  --ports 8080:http --routes /:8080 \
+  --env RAAL_DB_DRIVER=sqlite3 \
+  --env RAAL_DB_PATH=/data/raalisence.db \
+  --env RAAL_SERVER_ADDR=":8080" \
+  --env RAAL_SERVER_ADMIN_API_KEY="change-me" \
+  --secret RAAL_SIGNING_PRIVATE_KEY_PEM=raal-priv \
+  --secret RAAL_SIGNING_PUBLIC_KEY_PEM=raal-pub \
+  --volumes raal-sqlite:/data`
+
+
+## Structure 
 
 raalisence/
 ├─ cmd/raalisence/main.go

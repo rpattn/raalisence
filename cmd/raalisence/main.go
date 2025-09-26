@@ -14,6 +14,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/rpattn/raalisence/internal/config"
+	"github.com/rpattn/raalisence/internal/db/migrations_sqlite"
 	"github.com/rpattn/raalisence/internal/server"
 )
 
@@ -22,11 +23,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
-
-	// in main(), right at the start:
-	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
-	// If you want UTC timestamps from the standard logger prefix too:
-	log.SetOutput(log.Writer()) // (no native LUTC flag; our middleware already logs UTC in-message)
 
 	// Preflight: ensure signing keys are valid early, with clear error.
 	if _, err := cfg.PrivateKey(); err != nil {
@@ -51,6 +47,15 @@ func main() {
 	defer db.Close()
 	if err := db.Ping(); err != nil {
 		log.Fatalf("ping db: %v", err)
+	}
+
+	// In-app migration for SQLite (idempotent)
+	if driver == "sqlite3" {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := migrate.EnsureSQLiteSchema(ctx, db); err != nil {
+			log.Fatalf("sqlite migrate: %v", err)
+		}
 	}
 
 	srv := server.New(db, cfg)
