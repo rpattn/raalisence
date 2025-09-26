@@ -83,6 +83,7 @@
 
         <label>Admin API Key (Bearer)</label>
         <input id="adminKey" type="password" placeholder="dev-admin-key" />
+        <p class="muted" style="margin:6px 0 0;">Token is kept in memory only and must be re-entered after refresh.</p>
 
         <div style="display:flex; gap:10px; margin-top:10px;">
             <button class="primary" onclick="saveSettings()">Save</button>
@@ -145,13 +146,17 @@
 
         function loadSettings() {
             $("baseUrl").value = localStorage.getItem("raal.baseUrl") || location.origin;
-            $("adminKey").value = localStorage.getItem("raal.adminKey") || "";
+            $("adminKey").value = "";
         }
 
         function saveSettings() {
-            localStorage.setItem("raal.baseUrl", $("baseUrl").value.trim());
-            localStorage.setItem("raal.adminKey", $("adminKey").value.trim());
-            log("settings.saved", { baseUrl: $("baseUrl").value, adminKeySet: $("adminKey").value.length > 0 });
+            const baseUrl = $("baseUrl").value.trim();
+            if (baseUrl) {
+                localStorage.setItem("raal.baseUrl", baseUrl);
+            } else {
+                localStorage.removeItem("raal.baseUrl");
+            }
+            log("settings.saved", { baseUrl });
         }
 
         function clearOutput() { out.textContent = ""; }
