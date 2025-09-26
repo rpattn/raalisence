@@ -64,7 +64,7 @@ func IssueLicense(db *sql.DB, cfg *config.Config) http.Handler {
 
 		// insert
 		const insert = `insert into licenses (id, license_key, customer, machine_id, features, expires_at, revoked, last_seen_at, created_at, updated_at)
-values ($1,$2,$3,$4,$5,$6,false,null,now(),now())`
+		values ($1,$2,$3,$4,$5,$6,false,null,now(),now())`
 		featuresJSON, _ := json.Marshal(req.Features)
 		_, err := db.ExecContext(ctx, insert, uuid.New(), licenseKey, req.Customer, req.MachineID, string(featuresJSON), req.ExpiresAt.UTC())
 		if err != nil {
@@ -74,7 +74,7 @@ values ($1,$2,$3,$4,$5,$6,false,null,now(),now())`
 
 		priv, err := cfg.PrivateKey()
 		if err != nil {
-			http.Error(w, "signing key error", http.StatusInternalServerError)
+			http.Error(w, "signing key error: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -88,7 +88,7 @@ values ($1,$2,$3,$4,$5,$6,false,null,now(),now())`
 		}
 		sig, err := crypto.SignJSON(priv, payload)
 		if err != nil {
-			http.Error(w, "sign error", http.StatusInternalServerError)
+			http.Error(w, "sign error: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 

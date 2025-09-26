@@ -14,9 +14,7 @@ import (
 	"math/big"
 )
 
-type ecdsaSig struct{ R, S *bigInt }
-
-type bigInt struct{ B []byte }
+type ecdsaSig struct{ R, S *big.Int }
 
 // SignJSON signs the canonical JSON encoding of payload using ECDSA P-256/SHA-256.
 func SignJSON(priv *ecdsa.PrivateKey, payload map[string]any) (string, error) {
@@ -29,7 +27,7 @@ func SignJSON(priv *ecdsa.PrivateKey, payload map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	sig, err := asn1.Marshal(ecdsaSig{&bigInt{r.Bytes()}, &bigInt{s.Bytes()}})
+	sig, err := asn1.Marshal(ecdsaSig{R: r, S: s})
 	if err != nil {
 		return "", err
 	}
@@ -51,13 +49,9 @@ func VerifyJSON(pub *ecdsa.PublicKey, payload map[string]any, sigB64 string) (bo
 	if _, err := asn1.Unmarshal(sig, &es); err != nil {
 		return false, err
 	}
-	r := newBigInt(es.R.B)
-	s := newBigInt(es.S.B)
-	ok := ecdsa.Verify(pub, h[:], r, s)
+	ok := ecdsa.Verify(pub, h[:], es.R, es.S)
 	return ok, nil
 }
-
-func newBigInt(b []byte) *big.Int { var z big.Int; z.SetBytes(b); return &z }
 
 // Helpers to generate PEM keys (useful in tests/dev)
 func GeneratePEM() (privPEM, pubPEM string, err error) {

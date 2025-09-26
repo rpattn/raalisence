@@ -44,6 +44,13 @@ func Load() (*Config, error) {
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
+	// Explicit env bindings (avoid surprises with nested keys)
+	_ = v.BindEnv("server.addr")
+	_ = v.BindEnv("server.admin_api_key")
+	_ = v.BindEnv("db.dsn")
+	_ = v.BindEnv("signing.private_key_pem")
+	_ = v.BindEnv("signing.public_key_pem")
+
 	// defaults
 	v.SetDefault("server.addr", ":8080")
 	v.SetDefault("db.dsn", "postgres://postgres:postgres@localhost:5432/raalisence?sslmode=disable")

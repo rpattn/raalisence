@@ -22,6 +22,14 @@ func main() {
 		log.Fatalf("load config: %v", err)
 	}
 
+	// Preflight: ensure signing keys are valid early, with clear error.
+	if _, err := cfg.PrivateKey(); err != nil {
+		log.Fatalf("signing private key: %v", err)
+	}
+	if _, err := cfg.PublicKey(); err != nil {
+		log.Fatalf("signing public key: %v", err)
+	}
+
 	db, err := sql.Open("pgx", cfg.DB.DSN)
 	if err != nil {
 		log.Fatalf("open db: %v", err)
