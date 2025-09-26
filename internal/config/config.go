@@ -11,23 +11,21 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Config is the top-level application configuration.
-// Loaded from config file (viper) with env fallback.
-
 type Config struct {
 	Server struct {
 		Addr        string `mapstructure:"addr"`
 		AdminAPIKey string `mapstructure:"admin_api_key"`
 	} `mapstructure:"server"`
 	DB struct {
-		DSN string `mapstructure:"dsn"`
+		Driver string `mapstructure:"driver"`
+		DSN    string `mapstructure:"dsn"`
+		Path   string `mapstructure:"path"`
 	} `mapstructure:"db"`
 	Signing struct {
 		PrivateKeyPEM string `mapstructure:"private_key_pem"`
 		PublicKeyPEM  string `mapstructure:"public_key_pem"`
 	} `mapstructure:"signing"`
 
-	// Parsed keys (lazy)
 	privateKey *ecdsa.PrivateKey
 	publicKey  *ecdsa.PublicKey
 }
@@ -44,16 +42,20 @@ func Load() (*Config, error) {
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
-	// Explicit env bindings (avoid surprises with nested keys)
+	// Explicit env bindings (ensure nested keys work)
 	_ = v.BindEnv("server.addr")
 	_ = v.BindEnv("server.admin_api_key")
+	_ = v.BindEnv("db.driver")
 	_ = v.BindEnv("db.dsn")
+	_ = v.BindEnv("db.path")
 	_ = v.BindEnv("signing.private_key_pem")
 	_ = v.BindEnv("signing.public_key_pem")
 
 	// defaults
 	v.SetDefault("server.addr", ":8080")
+	v.SetDefault("db.driver", "pgx")
 	v.SetDefault("db.dsn", "postgres://postgres:postgres@localhost:5432/raalisence?sslmode=disable")
+	v.SetDefault("db.path", "./raalisence.db")
 
 	_ = v.ReadInConfig() // optional
 

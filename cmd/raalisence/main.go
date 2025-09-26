@@ -11,6 +11,7 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/rpattn/raalisence/internal/config"
 	"github.com/rpattn/raalisence/internal/server"
@@ -22,6 +23,11 @@ func main() {
 		log.Fatalf("load config: %v", err)
 	}
 
+	// in main(), right at the start:
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+	// If you want UTC timestamps from the standard logger prefix too:
+	log.SetOutput(log.Writer()) // (no native LUTC flag; our middleware already logs UTC in-message)
+
 	// Preflight: ensure signing keys are valid early, with clear error.
 	if _, err := cfg.PrivateKey(); err != nil {
 		log.Fatalf("signing private key: %v", err)
@@ -30,7 +36,15 @@ func main() {
 		log.Fatalf("signing public key: %v", err)
 	}
 
-	db, err := sql.Open("pgx", cfg.DB.DSN)
+	// choose db driver
+	driver := "pgx"
+	dsn := cfg.DB.DSN
+	if cfg.DB.Driver == "sqlite3" {
+		driver = "sqlite3"
+		dsn = cfg.DB.Path
+	}
+
+	db, err := sql.Open(driver, dsn)
 	if err != nil {
 		log.Fatalf("open db: %v", err)
 	}
@@ -51,7 +65,7 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("raalisence listening on %s", cfg.Server.Addr)
+		log.Printf("raalisence listening on %s (driver=%s)", cfg.Server.Addr, driver)
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("http server: %v", err)
 		}

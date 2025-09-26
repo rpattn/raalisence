@@ -35,6 +35,7 @@ config.yaml
 
 # DB data
 /dbdata/
+*.db
 
 # Generated
 /internal/db/sqlc/

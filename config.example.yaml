@@ -4,7 +4,9 @@ server:
 
 
 db:
+  driver: "pgx"   # or "sqlite3"
   dsn: "postgres://postgres:postgres@localhost:5432/raalisence?sslmode=disable"
+  path: "./raalisence.db"   # if using sqlite3
 
 
 signing:

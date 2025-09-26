@@ -36,5 +36,5 @@ func (s *Server) Handler() http.Handler {
 	})
 
 	// logging
-	return middleware.Logging(mux)
+	return middleware.WithRequestID(middleware.Logging(mux))
 }

@@ -64,9 +64,13 @@ func IssueLicense(db *sql.DB, cfg *config.Config) http.Handler {
 
 		// insert
 		const insert = `insert into licenses (id, license_key, customer, machine_id, features, expires_at, revoked, last_seen_at, created_at, updated_at)
-		values ($1,$2,$3,$4,$5,$6,false,null,now(),now())`
+		values ($1,$2,$3,$4,$5,$6,false,null,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`
 		featuresJSON, _ := json.Marshal(req.Features)
-		_, err := db.ExecContext(ctx, insert, uuid.New(), licenseKey, req.Customer, req.MachineID, string(featuresJSON), req.ExpiresAt.UTC())
+		expVal := any(req.ExpiresAt.UTC())
+		if cfg.DB.Driver == "sqlite3" {
+			expVal = req.ExpiresAt.UTC().Format(time.RFC3339Nano)
+		}
+		_, err := db.ExecContext(ctx, insert, uuid.New(), licenseKey, req.Customer, req.MachineID, string(featuresJSON), expVal)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -124,7 +128,7 @@ func RevokeLicense(db *sql.DB) http.Handler {
 			return
 		}
 		ctx := r.Context()
-		res, err := db.ExecContext(ctx, `update licenses set revoked=true, updated_at=now() where license_key=$1`, req.LicenseKey)
+		res, err := db.ExecContext(ctx, `update licenses set revoked=true, updated_at=CURRENT_TIMESTAMP where license_key=$1`, req.LicenseKey)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -156,16 +160,42 @@ func ValidateLicense(db *sql.DB, cfg *config.Config) http.Handler {
 
 		ctx := r.Context()
 		var revoked bool
-		var expires time.Time
 		var machine string
-		err := db.QueryRowContext(ctx, `select revoked, expires_at, machine_id from licenses where license_key=$1`, req.LicenseKey).Scan(&revoked, &expires, &machine)
-		if errors.Is(err, sql.ErrNoRows) {
-			writeJSON(w, http.StatusOK, ValidateResponse{Valid: false, Reason: "unknown license"})
-			return
-		}
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+		var expires time.Time
+
+		if cfg.DB.Driver == "sqlite3" {
+			// SQLite stores expires_at as TEXT (RFC3339)
+			var expStr string
+			if err := db.QueryRowContext(ctx, `select revoked, expires_at, machine_id from licenses where license_key=$1`, req.LicenseKey).
+				Scan(&revoked, &expStr, &machine); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					writeJSON(w, http.StatusOK, ValidateResponse{Valid: false, Reason: "unknown license"})
+					return
+				}
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			// parse with RFC3339Nano then fall back to RFC3339
+			var perr error
+			expires, perr = time.Parse(time.RFC3339Nano, expStr)
+			if perr != nil {
+				expires, perr = time.Parse(time.RFC3339, expStr)
+			}
+			if perr != nil {
+				http.Error(w, "bad expires_at format", http.StatusInternalServerError)
+				return
+			}
+		} else {
+			// Postgres path: timestamptz → time.Time
+			if err := db.QueryRowContext(ctx, `select revoked, expires_at, machine_id from licenses where license_key=$1`, req.LicenseKey).
+				Scan(&revoked, &expires, &machine); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					writeJSON(w, http.StatusOK, ValidateResponse{Valid: false, Reason: "unknown license"})
+					return
+				}
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}
 
 		if machine != req.MachineID {
@@ -200,7 +230,7 @@ func Heartbeat(db *sql.DB) http.Handler {
 			return
 		}
 		ctx := r.Context()
-		res, err := db.ExecContext(ctx, `update licenses set last_seen_at=now(), updated_at=now() where license_key=$1`, req.LicenseKey)
+		res, err := db.ExecContext(ctx, `update licenses set last_seen_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP where license_key=$1`, req.LicenseKey)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
