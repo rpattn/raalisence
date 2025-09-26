@@ -128,6 +128,12 @@
             <input id="hbKey" placeholder="uuid" />
             <button class="primary" onclick="heartbeat()">Send Heartbeat</button>
         </div>
+
+        <div class="card" style="flex:1 1 360px;">
+            <h3>List Licenses (admin)</h3>
+            <button class="primary" onclick="listLicenses()">Refresh</button>
+            <pre id="licenseList" style="margin-top:10px; max-height:240px; overflow:auto;">Press Refresh to load licenses.</pre>
+        </div>
     </div>
 
     <div class="card" style="width:100%; margin-top:16px;">
@@ -138,6 +144,7 @@
     <script>
         const $ = (id) => document.getElementById(id);
         const out = $("out");
+        const licenseList = $("licenseList");
 
         function log(title, data) {
             const ts = new Date().toISOString();
@@ -217,6 +224,37 @@
                 const json = await res.json().catch(() => ({ raw: res.statusText }));
                 log("licenses.heartbeat", { status: res.status, json });
             } catch (e) { log("error.heartbeat", { error: String(e) }); }
+        }
+
+        async function listLicenses() {
+            try {
+                licenseList.textContent = "Loading...";
+                const url = new URL("/api/v1/licenses", $("baseUrl").value).toString();
+                const res = await fetch(url, {
+                    headers: { "Authorization": "Bearer " + ($("adminKey").value || "") }
+                });
+                const json = await res.json().catch(() => ({ raw: res.statusText }));
+                log("licenses.list", { status: res.status, json });
+                if (res.ok && Array.isArray(json.licenses)) {
+                    if (json.licenses.length === 0) {
+                        licenseList.textContent = "No licenses found.";
+                    } else {
+                        licenseList.textContent = json.licenses
+                            .map((lic) => {
+                                const customer = lic.customer || "(unknown customer)";
+                                const machine = lic.machine_id || "(machine unknown)";
+                                const expires = lic.expires_at || "(no expiry)";
+                                return `${customer} – ${machine}\n${lic.license_key} (${lic.id})\nExpires: ${expires}\nRevoked: ${lic.revoked ? "yes" : "no"}`;
+                            })
+                            .join("\n\n");
+                    }
+                } else {
+                    licenseList.textContent = "Failed to load licenses.";
+                }
+            } catch (e) {
+                log("error.list", { error: String(e) });
+                licenseList.textContent = "Failed to load licenses.";
+            }
         }
 
         loadSettings();
