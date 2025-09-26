@@ -68,6 +68,32 @@
             padding: 8px;
             border-radius: 8px;
         }
+
+        .license-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .license-item {
+            border: 1px solid #e5e5e5;
+            border-radius: 8px;
+            padding: 10px;
+            background: #fafafa;
+        }
+
+        .license-item.revoked {
+            border-color: #f0c5c5;
+            background: #fff6f6;
+        }
+
+        .license-item strong {
+            display: block;
+        }
+
+        .license-item button {
+            margin-top: 8px;
+        }
     </style>
 </head>
 
@@ -99,11 +125,23 @@
             <input id="issueCustomer" placeholder="Acme Corp" />
             <label>Machine ID</label>
             <input id="issueMachine" placeholder="MID-123" />
-            <label>Expires At (RFC3339)</label>
-            <input id="issueExpires" placeholder="2026-01-01T00:00:00Z" />
+            <label>Expires At</label>
+            <input id="issueExpires" type="datetime-local" />
             <label>Features (JSON)</label>
             <textarea id="issueFeatures" rows="4">{"seats":5}</textarea>
             <button class="primary" onclick="issue()">Issue</button>
+        </div>
+
+        <div class="card">
+            <h3>Update License (admin)</h3>
+            <label>License Key</label>
+            <input id="updateKey" placeholder="uuid" />
+            <label>New Expires At</label>
+            <input id="updateExpires" type="datetime-local" />
+            <label>Seats</label>
+            <input id="updateSeats" type="number" min="0" step="1" placeholder="Leave blank to keep" />
+            <button class="primary" onclick="updateLicense()">Update</button>
+            <p class="muted" style="margin:6px 0 0;">Select a license from the list to populate these fields automatically.</p>
         </div>
 
         <div class="card">
@@ -132,7 +170,9 @@
         <div class="card" style="flex:1 1 360px;">
             <h3>List Licenses (admin)</h3>
             <button class="primary" onclick="listLicenses()">Refresh</button>
-            <pre id="licenseList" style="margin-top:10px; max-height:240px; overflow:auto;">Press Refresh to load licenses.</pre>
+            <div id="licenseList" class="license-list" style="margin-top:10px; max-height:240px; overflow:auto;">
+                <div class="muted">Press Refresh to load licenses.</div>
+            </div>
         </div>
     </div>
 
@@ -145,10 +185,58 @@
         const $ = (id) => document.getElementById(id);
         const out = $("out");
         const licenseList = $("licenseList");
+        let licenseCache = [];
 
         function log(title, data) {
             const ts = new Date().toISOString();
             out.textContent = `${ts} — ${title}` + JSON.stringify(data, null, 2) + " " + out.textContent;
+        }
+
+        function toRFC3339(input) {
+            if (!input) return "";
+            const value = input.value;
+            if (!value) {
+                return "";
+            }
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) {
+                return value.trim();
+            }
+            return date.toISOString();
+        }
+
+        function setDateTimeInputValue(input, isoString) {
+            if (!input) return;
+            if (!isoString) {
+                input.value = "";
+                return;
+            }
+            const date = new Date(isoString);
+            if (Number.isNaN(date.getTime())) {
+                input.value = "";
+                return;
+            }
+            const pad = (n) => String(n).padStart(2, "0");
+            const year = date.getFullYear();
+            const month = pad(date.getMonth() + 1);
+            const day = pad(date.getDate());
+            const hours = pad(date.getHours());
+            const minutes = pad(date.getMinutes());
+            const seconds = pad(date.getSeconds());
+            let formatted = `${year}-${month}-${day}T${hours}:${minutes}`;
+            if (seconds !== "00") {
+                formatted += `:${seconds}`;
+            }
+            input.value = formatted;
+        }
+
+        function formatLocalDateTime(value) {
+            if (!value) return "(not set)";
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) {
+                return value;
+            }
+            return date.toLocaleString();
         }
 
         function loadSettings() {
@@ -168,14 +256,39 @@
 
         function clearOutput() { out.textContent = ""; }
 
+        function populateUpdateForm(licenseKey) {
+            $("updateKey").value = licenseKey || "";
+            const lic = licenseCache.find((item) => item.license_key === licenseKey);
+            if (!lic) {
+                return;
+            }
+            setDateTimeInputValue($("updateExpires"), lic.expires_at);
+            const seatField = $("updateSeats");
+            const seatValue = lic.features && lic.features.seats;
+            if (typeof seatValue === "number" || (typeof seatValue === "string" && seatValue !== "")) {
+                seatField.value = seatValue;
+            } else {
+                seatField.value = "";
+            }
+            log("licenses.populate", { license_key: lic.license_key });
+        }
+
         async function issue() {
             try {
                 const url = new URL("/api/v1/licenses/issue", $("baseUrl").value).toString();
+                let features = {};
+                const rawFeatures = $("issueFeatures").value || "{}";
+                try {
+                    features = JSON.parse(rawFeatures);
+                } catch (err) {
+                    log("error.issue_features", { error: String(err) });
+                    return;
+                }
                 const body = {
                     customer: $("issueCustomer").value.trim(),
                     machine_id: $("issueMachine").value.trim(),
-                    expires_at: $("issueExpires").value.trim(),
-                    features: JSON.parse($("issueFeatures").value || "{}")
+                    expires_at: toRFC3339($("issueExpires")),
+                    features
                 };
                 const res = await fetch(url, {
                     method: "POST",
@@ -192,8 +305,68 @@
                     $("revKey").value = json.license_key;
                     $("hbKey").value = json.license_key;
                     $("valMachine").value = json.machine_id;
+                    $("updateKey").value = json.license_key;
+                    setDateTimeInputValue($("updateExpires"), json.expires_at);
+                    const issuedSeats = json.features && json.features.seats;
+                    if (typeof issuedSeats === "number" || (typeof issuedSeats === "string" && issuedSeats !== "")) {
+                        $("updateSeats").value = issuedSeats;
+                    }
+                    await listLicenses();
+                    populateUpdateForm(json.license_key);
                 }
             } catch (e) { log("error.issue", { error: String(e) }); }
+        }
+
+        async function updateLicense() {
+            try {
+                const licenseKey = $("updateKey").value.trim();
+                if (!licenseKey) {
+                    log("licenses.update.missing_key", { message: "license key required" });
+                    return;
+                }
+                const body = { license_key: licenseKey };
+                const expiresValue = toRFC3339($("updateExpires"));
+                if (expiresValue) {
+                    body.expires_at = expiresValue;
+                }
+                const seatsRaw = $("updateSeats").value.trim();
+                if (seatsRaw !== "") {
+                    const seats = Number(seatsRaw);
+                    if (!Number.isFinite(seats) || seats < 0) {
+                        log("licenses.update.invalid_seats", { seats: seatsRaw });
+                        return;
+                    }
+                    let featuresPayload = {};
+                    const existing = licenseCache.find((item) => item.license_key === licenseKey);
+                    if (existing && existing.features && typeof existing.features === "object") {
+                        featuresPayload = { ...existing.features };
+                    }
+                    featuresPayload.seats = seats;
+                    body.features = featuresPayload;
+                }
+                if (!body.expires_at && !body.features) {
+                    log("licenses.update.noop", { message: "set expires_at or seats" });
+                    return;
+                }
+
+                const url = new URL("/api/v1/licenses/update", $("baseUrl").value).toString();
+                const res = await fetch(url, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": "Bearer " + ($("adminKey").value || "")
+                    },
+                    body: JSON.stringify(body)
+                });
+                const json = await res.json().catch(() => ({ raw: res.statusText }));
+                log("licenses.update", { status: res.status, json });
+                if (res.ok) {
+                    await listLicenses();
+                    populateUpdateForm(licenseKey);
+                }
+            } catch (e) {
+                log("error.update", { error: String(e) });
+            }
         }
 
         async function validateKey() {
@@ -228,7 +401,7 @@
 
         async function listLicenses() {
             try {
-                licenseList.textContent = "Loading...";
+                licenseList.innerHTML = "<div class=\"muted\">Loading...</div>";
                 const url = new URL("/api/v1/licenses", $("baseUrl").value).toString();
                 const res = await fetch(url, {
                     headers: { "Authorization": "Bearer " + ($("adminKey").value || "") }
@@ -236,24 +409,70 @@
                 const json = await res.json().catch(() => ({ raw: res.statusText }));
                 log("licenses.list", { status: res.status, json });
                 if (res.ok && Array.isArray(json.licenses)) {
-                    if (json.licenses.length === 0) {
-                        licenseList.textContent = "No licenses found.";
-                    } else {
-                        licenseList.textContent = json.licenses
-                            .map((lic) => {
-                                const customer = lic.customer || "(unknown customer)";
-                                const machine = lic.machine_id || "(machine unknown)";
-                                const expires = lic.expires_at || "(no expiry)";
-                                return `${customer} – ${machine}\n${lic.license_key} (${lic.id})\nExpires: ${expires}\nRevoked: ${lic.revoked ? "yes" : "no"}`;
-                            })
-                            .join("\n\n");
+                    licenseCache = json.licenses;
+                    if (licenseCache.length === 0) {
+                        licenseList.innerHTML = "<div class=\"muted\">No licenses found.</div>";
+                        return;
                     }
+                    licenseList.innerHTML = "";
+                    licenseCache.forEach((lic) => {
+                        const item = document.createElement("div");
+                        item.className = "license-item" + (lic.revoked ? " revoked" : "");
+
+                        const name = document.createElement("strong");
+                        name.textContent = lic.customer || "(unknown customer)";
+                        item.appendChild(name);
+
+                        const machineLine = document.createElement("div");
+                        machineLine.textContent = `Machine: ${lic.machine_id || "(machine unknown)"}`;
+                        item.appendChild(machineLine);
+
+                        const keyLine = document.createElement("div");
+                        keyLine.className = "muted";
+                        keyLine.textContent = `Key: ${lic.license_key} (${lic.id})`;
+                        item.appendChild(keyLine);
+
+                        const expiresLine = document.createElement("div");
+                        expiresLine.textContent = `Expires: ${formatLocalDateTime(lic.expires_at)}`;
+                        item.appendChild(expiresLine);
+
+                        const seatsLine = document.createElement("div");
+                        const seatValue = lic.features && lic.features.seats;
+                        if (typeof seatValue === "number" || (typeof seatValue === "string" && seatValue !== "")) {
+                            seatsLine.textContent = `Seats: ${seatValue}`;
+                        } else {
+                            seatsLine.textContent = "Seats: (not set)";
+                        }
+                        item.appendChild(seatsLine);
+
+                        if (lic.last_seen_at) {
+                            const lastSeenLine = document.createElement("div");
+                            lastSeenLine.textContent = `Last seen: ${formatLocalDateTime(lic.last_seen_at)}`;
+                            item.appendChild(lastSeenLine);
+                        }
+
+                        const revokedLine = document.createElement("div");
+                        revokedLine.textContent = `Revoked: ${lic.revoked ? "yes" : "no"}`;
+                        item.appendChild(revokedLine);
+
+                        const actions = document.createElement("div");
+                        actions.style.marginTop = "8px";
+                        const editButton = document.createElement("button");
+                        editButton.textContent = "Edit";
+                        editButton.onclick = () => populateUpdateForm(lic.license_key);
+                        actions.appendChild(editButton);
+                        item.appendChild(actions);
+
+                        licenseList.appendChild(item);
+                    });
                 } else {
-                    licenseList.textContent = "Failed to load licenses.";
+                    licenseCache = [];
+                    licenseList.innerHTML = "<div class=\"muted\">Failed to load licenses.</div>";
                 }
             } catch (e) {
+                licenseCache = [];
                 log("error.list", { error: String(e) });
-                licenseList.textContent = "Failed to load licenses.";
+                licenseList.innerHTML = "<div class=\"muted\">Failed to load licenses.</div>";
             }
         }
 
