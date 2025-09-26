@@ -26,6 +26,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("/api/v1/licenses", middleware.WithAdminKey(s.cfg, handlers.ListLicenses(s.db, s.cfg)))
 	mux.Handle("/api/v1/licenses/issue", middleware.WithAdminKey(s.cfg, handlers.IssueLicense(s.db, s.cfg)))
 	mux.Handle("/api/v1/licenses/revoke", middleware.WithAdminKey(s.cfg, handlers.RevokeLicense(s.db)))
+	mux.Handle("/api/v1/licenses/update", middleware.WithAdminKey(s.cfg, handlers.UpdateLicense(s.db, s.cfg)))
 	mux.Handle("/api/v1/licenses/validate", handlers.ValidateLicense(s.db, s.cfg))
 	mux.Handle("/api/v1/licenses/heartbeat", handlers.Heartbeat(s.db))
 

@@ -4,8 +4,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -46,17 +48,24 @@ type ValidateResponse struct {
 }
 
 type LicenseSummary struct {
-	ID         string  `json:"id"`
-	LicenseKey string  `json:"license_key"`
-	Customer   string  `json:"customer"`
-	MachineID  string  `json:"machine_id"`
-	ExpiresAt  string  `json:"expires_at"`
-	Revoked    bool    `json:"revoked"`
-	LastSeenAt *string `json:"last_seen_at,omitempty"`
+	ID         string         `json:"id"`
+	LicenseKey string         `json:"license_key"`
+	Customer   string         `json:"customer"`
+	MachineID  string         `json:"machine_id"`
+	ExpiresAt  string         `json:"expires_at"`
+	Revoked    bool           `json:"revoked"`
+	LastSeenAt *string        `json:"last_seen_at,omitempty"`
+	Features   map[string]any `json:"features,omitempty"`
 }
 
 type ListLicensesResponse struct {
 	Licenses []LicenseSummary `json:"licenses"`
+}
+
+type UpdateLicenseRequest struct {
+	LicenseKey string         `json:"license_key"`
+	ExpiresAt  *string        `json:"expires_at,omitempty"`
+	Features   map[string]any `json:"features,omitempty"`
 }
 
 func IssueLicense(db *sql.DB, cfg *config.Config) http.Handler {
@@ -257,6 +266,80 @@ func Heartbeat(db *sql.DB) http.Handler {
 	})
 }
 
+func UpdateLicense(db *sql.DB, cfg *config.Config) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req UpdateLicenseRequest
+		if !decodeJSON(w, r, &req) {
+			return
+		}
+		if req.LicenseKey == "" {
+			http.Error(w, "license_key required", http.StatusBadRequest)
+			return
+		}
+
+		ctx := r.Context()
+		updates := make([]string, 0, 3)
+		args := make([]any, 0, 3)
+
+		if req.ExpiresAt != nil {
+			parsed, err := time.Parse(time.RFC3339Nano, *req.ExpiresAt)
+			if err != nil {
+				parsed, err = time.Parse(time.RFC3339, *req.ExpiresAt)
+			}
+			if err != nil {
+				http.Error(w, "expires_at must be RFC3339", http.StatusBadRequest)
+				return
+			}
+			parsed = parsed.UTC()
+			updates = append(updates, fmt.Sprintf("expires_at=$%d", len(args)+1))
+			if cfg != nil && cfg.DB.Driver == "sqlite3" {
+				args = append(args, parsed.Format(time.RFC3339Nano))
+			} else {
+				args = append(args, parsed)
+			}
+		}
+
+		if req.Features != nil {
+			featuresJSON, err := json.Marshal(req.Features)
+			if err != nil {
+				http.Error(w, "bad features payload", http.StatusBadRequest)
+				return
+			}
+			clause := fmt.Sprintf("features=$%d", len(args)+1)
+			if cfg != nil && cfg.DB.Driver != "sqlite3" {
+				clause += "::jsonb"
+			}
+			updates = append(updates, clause)
+			args = append(args, string(featuresJSON))
+		}
+
+		if len(updates) == 0 {
+			http.Error(w, "no updates requested", http.StatusBadRequest)
+			return
+		}
+
+		updates = append(updates, "updated_at=CURRENT_TIMESTAMP")
+		args = append(args, req.LicenseKey)
+		query := fmt.Sprintf("update licenses set %s where license_key=$%d", strings.Join(updates, ", "), len(args))
+
+		res, err := db.ExecContext(ctx, query, args...)
+		if err != nil {
+			internalError(w, "license.update", err)
+			return
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	})
+}
+
 func ListLicenses(db *sql.DB, cfg *config.Config) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -265,7 +348,7 @@ func ListLicenses(db *sql.DB, cfg *config.Config) http.Handler {
 		}
 
 		ctx := r.Context()
-		rows, err := db.QueryContext(ctx, `select id, license_key, customer, machine_id, expires_at, revoked, last_seen_at from licenses order by created_at desc`)
+		rows, err := db.QueryContext(ctx, `select id, license_key, customer, machine_id, features, expires_at, revoked, last_seen_at from licenses order by created_at desc`)
 		if err != nil {
 			internalError(w, "licenses.list.query", err)
 			return
@@ -276,25 +359,39 @@ func ListLicenses(db *sql.DB, cfg *config.Config) http.Handler {
 		for rows.Next() {
 			var sum LicenseSummary
 			if cfg != nil && cfg.DB.Driver == "sqlite3" {
+				var features string
 				var expires string
 				var lastSeen sql.NullString
-				if err := rows.Scan(&sum.ID, &sum.LicenseKey, &sum.Customer, &sum.MachineID, &expires, &sum.Revoked, &lastSeen); err != nil {
+				if err := rows.Scan(&sum.ID, &sum.LicenseKey, &sum.Customer, &sum.MachineID, &features, &expires, &sum.Revoked, &lastSeen); err != nil {
 					internalError(w, "licenses.list.scan", err)
 					return
 				}
 				sum.ExpiresAt = expires
+				if features != "" {
+					var feats map[string]any
+					if err := json.Unmarshal([]byte(features), &feats); err == nil {
+						sum.Features = feats
+					}
+				}
 				if lastSeen.Valid && lastSeen.String != "" {
 					ls := lastSeen.String
 					sum.LastSeenAt = &ls
 				}
 			} else {
+				var features []byte
 				var expires time.Time
 				var lastSeen sql.NullTime
-				if err := rows.Scan(&sum.ID, &sum.LicenseKey, &sum.Customer, &sum.MachineID, &expires, &sum.Revoked, &lastSeen); err != nil {
+				if err := rows.Scan(&sum.ID, &sum.LicenseKey, &sum.Customer, &sum.MachineID, &features, &expires, &sum.Revoked, &lastSeen); err != nil {
 					internalError(w, "licenses.list.scan", err)
 					return
 				}
 				sum.ExpiresAt = expires.UTC().Format(time.RFC3339Nano)
+				if len(features) > 0 {
+					var feats map[string]any
+					if err := json.Unmarshal(features, &feats); err == nil {
+						sum.Features = feats
+					}
+				}
 				if lastSeen.Valid {
 					ls := lastSeen.Time.UTC().Format(time.RFC3339Nano)
 					sum.LastSeenAt = &ls
