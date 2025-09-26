@@ -26,12 +26,18 @@ RUN go build -trimpath -ldflags="-s -w" -o /bin/raalisence ./cmd/raalisence
 # --- Runtime stage -----------------------------------------------------------
 # Distroless base includes libc & libstdc++ needed for CGO with sqlite.
 FROM gcr.io/distroless/base-debian12:nonroot
+WORKDIR /app
 
-# Optional config path (only if you actually ship a file; otherwise mount via secret/ConfigMap)
-# COPY config.yaml /etc/raalisence/config.yaml
+# Binary
+COPY --from=build /bin/raalisence /app/raalisence
 
-COPY --from=build /bin/raalisence /raalisence
+# Static assets (and templates if you have them)
+COPY --from=build /app/static /app/static
+# COPY --from=build /app/templates /app/templates
+
+# If your app needs to know the static dir:
+# ENV RA_STATIC_DIR=/app/static
 
 EXPOSE 8080
 USER nonroot:nonroot
-ENTRYPOINT ["/raalisence"]
+ENTRYPOINT ["/app/raalisence"]

@@ -13,6 +13,7 @@
 !scripts/
 !internal/db/migrations/
 !internal/db/queries/
+!static/**
 
 # ignore other configs, secrets, local builds
 config.yaml

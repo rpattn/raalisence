@@ -40,6 +40,7 @@ config.yaml
 # Generated
 /internal/db/sqlc/
 /tmp/raal_keys.env
+/keys/*
 
 # OS files
 .DS_Store
