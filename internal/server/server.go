@@ -35,6 +35,8 @@ func (s *Server) Handler() http.Handler {
 		http.Redirect(w, r, "/static/admin.html", http.StatusFound)
 	})
 
+	h := middleware.WithRequestID(middleware.WithRateLimit(s.cfg, mux))
+
 	// logging
-	return middleware.WithRequestID(middleware.Logging(mux))
+	return middleware.Logging(h)
 }

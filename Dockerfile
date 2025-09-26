@@ -8,6 +8,6 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /bin/raalisence ./cmd/raal
 
 FROM gcr.io/distroless/base-debian12
 COPY --from=build /bin/raalisence /raalisence
-COPY config.example.yaml /etc/raalisence/config.yaml
+COPY config.yaml /etc/raalisence/config.yaml
 EXPOSE 8080
 ENTRYPOINT ["/raalisence"]

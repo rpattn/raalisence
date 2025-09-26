@@ -10,6 +10,7 @@ db_conn="postgres://postgres:postgres@localhost:5433/raalisence?sslmode=disable"
 export RAAL_SERVER_ADDR="${RAAL_SERVER_ADDR:-":8080"}"
 export RAAL_DB_DSN="${RAAL_DB_DSN:-$db_conn}"
 export RAAL_SERVER_ADMIN_API_KEY="${RAAL_SERVER_ADMIN_API_KEY:-"dev-admin-key"}"
+echo "Set RAAL_SERVER_ADMIN_API_KEY to: $RAAL_SERVER_ADMIN_API_KEY"
 
 # --- helper: base64 decode (Linux/macOS) ---
 b64dec() {
