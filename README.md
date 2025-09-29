@@ -16,6 +16,42 @@ Viper for configuration (file first, fallback to environment variables).
 
 Minimal dependencies, clear file layout, tests, and helper scripts.
 
+## How to use (v1)
+
+All actions can be performed via the admin panel served from /
+
+### issue lisence
+pseudo code:
+
+```
+body: {Customer: "Acme", MachineID: "MID1", ExpiresAt: time.Now().Add(24 * time.Hour)}
+req (http.MethodPost, "/api/v1/licenses/issue", body)
+req.Header.Set("Authorization", "Bearer test-admin") #where test-admin is the admin key you set
+
+if resp.Code != http.StatusOK {
+  Fatalf("issue code=", resp.Body)
+}
+
+LicenseFile=rw.Body
+
+if LicenseFile.LicenseKey == "" {
+  Fatal("missing license key")
+}
+```
+
+### validate lisence
+pseudo code:
+
+```
+body: {LicenseKey: LicenseFile.LicenseKey, MachineID: "MID1"}
+req (http.MethodPost, "/api/v1/licenses/validate", body)
+
+if resp.Code != http.StatusOK {
+  Fatalf("validate code=%d body=%s", resp.Code, resp.Body)
+}
+```
+
+
 ## Quick start (dev)
 
 
@@ -88,7 +124,8 @@ e.g. with Koyeb `koyeb volume create raal-sqlite --size 5 --region fra`
 - 2) Config app
 
 e.g. with Koyeb 
-`koyeb service create raalisence/web \
+```bash
+koyeb service create raalisence/web \
   --image ghcr.io/you/raalisence:sqlite \
   --regions fra \
   --instance-type micro \
@@ -100,10 +137,11 @@ e.g. with Koyeb
   --secret RAAL_SIGNING_PRIVATE_KEY_PEM=raal-priv \
   --secret RAAL_SIGNING_PUBLIC_KEY_PEM=raal-pub \
   --volumes raal-sqlite:/data`
-
+```
 
 ## Structure 
 
+```
 raalisence/
 ├─ cmd/raalisence/main.go
 ├─ internal/config/config.go
@@ -133,3 +171,4 @@ raalisence/
 │  └─ 04-service.yaml
 ├─ internal/crypto/sign_test.go
 └─ internal/handlers/license_test.go
+```
