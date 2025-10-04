@@ -42,6 +42,10 @@ class ValidateResponse(BaseModel):
     reason: Optional[str] = None
 
 
+class LicenseKeyRequest(BaseModel):
+    license_key: str
+
+
 class UpdateLicenseRequest(BaseModel):
     license_key: str
     expires_at: Optional[str] = None
@@ -114,7 +118,7 @@ async def issue_license(request: IssueRequest, db: DatabaseConnection, config: C
     )
 
 
-async def revoke_license(request: ValidateRequest, db: DatabaseConnection) -> Dict[str, bool]:
+async def revoke_license(request: LicenseKeyRequest, db: DatabaseConnection) -> Dict[str, bool]:
     """Revoke a license."""
     if not request.license_key:
         raise HTTPException(status_code=400, detail="license_key required")
@@ -180,18 +184,14 @@ async def validate_license(request: ValidateRequest, db: DatabaseConnection, con
     if revoked:
         return ValidateResponse(valid=False, revoked=True, expires_at=expires_at, reason="revoked")
     
-    # Ensure both datetimes are naive for comparison
-    now = datetime.utcnow()
-    if isinstance(expires_at, datetime) and expires_at.tzinfo is not None:
-        expires_at = expires_at.replace(tzinfo=None)  # Convert to naive
-    
-    if now > expires_at:
+    # Compare datetimes (both should be naive now)
+    if datetime.utcnow() > expires_at:
         return ValidateResponse(valid=False, expires_at=expires_at, reason="expired")
     
     return ValidateResponse(valid=True, revoked=False, expires_at=expires_at)
 
 
-async def heartbeat(request: ValidateRequest, db: DatabaseConnection) -> Dict[str, bool]:
+async def heartbeat(request: LicenseKeyRequest, db: DatabaseConnection) -> Dict[str, bool]:
     """Update license heartbeat."""
     if not request.license_key:
         raise HTTPException(status_code=400, detail="license_key required")

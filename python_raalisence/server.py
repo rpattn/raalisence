@@ -14,7 +14,7 @@ from python_raalisence.handlers.health import health_check
 from python_raalisence.handlers.license import (
     issue_license, revoke_license, validate_license, heartbeat,
     update_license, list_licenses,
-    IssueRequest, ValidateRequest, UpdateLicenseRequest
+    IssueRequest, ValidateRequest, LicenseKeyRequest, UpdateLicenseRequest
 )
 from python_raalisence.middleware.auth import AdminAuthBearer
 from python_raalisence.middleware.logging import LoggingMiddleware
@@ -100,7 +100,7 @@ async def issue_license_endpoint(
 
 @app.post("/api/v1/licenses/revoke")
 async def revoke_license_endpoint(
-    request: ValidateRequest,
+    request: LicenseKeyRequest,
     _: str = Depends(get_admin_auth),
     db_conn: DatabaseConnection = Depends(get_db)
 ):
@@ -119,7 +119,7 @@ async def validate_license_endpoint(
 
 @app.post("/api/v1/licenses/heartbeat")
 async def heartbeat_endpoint(
-    request: ValidateRequest,
+    request: LicenseKeyRequest,
     db_conn: DatabaseConnection = Depends(get_db)
 ):
     """Update license heartbeat."""
