@@ -1,0 +1,76 @@
+# --- Build stage -------------------------------------------------------------
+FROM python:3.11-slim AS build
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Install system dependencies for building Python packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create and activate virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy dependency files
+COPY pyproject.toml requirements.txt ./
+
+# Install dependencies
+RUN pip install --upgrade pip && \
+    pip install -r requirements.txt
+
+# --- Runtime stage -----------------------------------------------------------
+FROM python:3.11-slim AS runtime
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH="/opt/venv/bin:$PATH"
+
+# Install runtime dependencies only
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN groupadd -r raalisence && useradd -r -g raalisence raalisence
+
+# Copy virtual environment from build stage
+COPY --from=build /opt/venv /opt/venv
+
+# Set working directory
+WORKDIR /app
+
+# Copy application code
+COPY python_raalisence/ ./python_raalisence/
+COPY static/ ./static/
+COPY config.yaml ./
+
+# Create directory for database and set permissions
+RUN mkdir -p /app/data && \
+    chown -R raalisence:raalisence /app
+
+# Switch to non-root user
+USER raalisence
+
+# Expose port
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8080/healthz || exit 1
+
+# Set default environment variables
+ENV PYTHONPATH=/app \
+    RA_DB_PATH=/app/data/raalisence.db
+
+# Run the application
+CMD ["python", "-m", "python_raalisence.main"]
