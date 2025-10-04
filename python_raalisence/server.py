@@ -67,6 +67,7 @@ app = FastAPI(title="raalisence", lifespan=lifespan)
 
 # Add middleware
 app.add_middleware(LoggingMiddleware)
+app.add_middleware(RateLimitMiddleware)
 
 # Database dependency
 def get_db() -> DatabaseConnection:

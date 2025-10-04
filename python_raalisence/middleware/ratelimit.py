@@ -3,8 +3,8 @@
 import time
 import threading
 from typing import Dict, Optional
-from fastapi import HTTPException, Request
-from starlette.responses import Response
+from fastapi import Request
+from starlette.middleware.base import BaseHTTPMiddleware
 
 
 class TokenBucket:
@@ -91,12 +91,11 @@ def rate_limit_key(request: Request, config) -> str:
     return f"ip:{client_ip}"
 
 
-class RateLimitMiddleware:
+class RateLimitMiddleware(BaseHTTPMiddleware):
     """Rate limiting middleware."""
     
-    def __init__(self, app, config=None):
-        self.app = app
-        self.config = config
+    def __init__(self, app):
+        super().__init__(app)
         # Different limiters for different endpoints
         self.fast_limiter = RateLimiter(5.0, 10)  # validate/heartbeat
         self.admin_limiter = RateLimiter(1.0, 3)  # issue/revoke
@@ -106,29 +105,24 @@ class RateLimitMiddleware:
         """Get appropriate limiter for path."""
         if path in ["/api/v1/licenses/validate", "/api/v1/licenses/heartbeat"]:
             return self.fast_limiter
-        elif path in ["/api/v1/licenses/issue", "/api/v1/licenses/revoke"]:
+        elif path in ["/api/v1/licenses/issue", "/api/v1/licenses/revoke", "/api/v1/licenses/update", "/api/v1/licenses"]:
             return self.admin_limiter
         else:
             return self.default_limiter
     
-    async def __call__(self, scope, receive, send):
+    async def dispatch(self, request: Request, call_next):
         """Apply rate limiting."""
-        if scope["type"] != "http":
-            await self.app(scope, receive, send)
-            return
-        
-        request = Request(scope, receive)
-        
-        # Get config from global variable if not provided
-        config = self.config
-        if config is None:
-            from python_raalisence.server import config as global_config
-            config = global_config
-        
-        if config is None:
-            # No config available, skip rate limiting
-            await self.app(scope, receive, send)
-            return
+        # Get config from global variable
+        try:
+            from python_raalisence.server import config
+            if config is None:
+                # No config available, skip rate limiting
+                response = await call_next(request)
+                return response
+        except ImportError:
+            # Config not loaded yet, skip rate limiting
+            response = await call_next(request)
+            return response
         
         key = rate_limit_key(request, config)
         limiter = self.get_limiter(request.url.path)
@@ -136,8 +130,8 @@ class RateLimitMiddleware:
         allowed, remaining, retry_after = limiter.allow(key)
         
         if not allowed:
-            from starlette.responses import Response
-            response = Response(
+            from fastapi.responses import Response
+            return Response(
                 content="rate limit exceeded",
                 status_code=429,
                 headers={
@@ -146,17 +140,10 @@ class RateLimitMiddleware:
                     "RateLimit-Remaining": str(remaining)
                 }
             )
-            await response(scope, receive, send)
-            return
         
-        # Add rate limit headers to response
-        async def send_with_headers(message):
-            if message["type"] == "http.response.start":
-                headers = dict(message.get("headers", []))
-                headers[b"ratelimit-limit"] = b"1"
-                headers[b"ratelimit-remaining"] = str(remaining).encode()
-                message["headers"] = list(headers.items())
-            await send(message)
+        response = await call_next(request)
+        response.headers["RateLimit-Limit"] = "1"
+        response.headers["RateLimit-Remaining"] = str(remaining)
         
-        await self.app(scope, receive, send_with_headers)
+        return response
 
