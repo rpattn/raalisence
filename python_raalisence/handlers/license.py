@@ -2,7 +2,7 @@
 
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 from fastapi import HTTPException, Request, Response
 from fastapi.responses import JSONResponse
@@ -73,12 +73,12 @@ async def issue_license(request: IssueRequest, db: DatabaseConnection, config: C
         raise HTTPException(status_code=400, detail="customer, machine_id, expires_at required")
     
     license_key = str(uuid.uuid4())
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     
     # Insert license into database
     features_json = json.dumps(request.features)
     
-    if db.config.db_driver == "sqlite3":
+    if config.db_driver == "sqlite3":
         expires_str = request.expires_at.isoformat()
         db.execute("""
             INSERT INTO licenses (id, license_key, customer, machine_id, features, expires_at, revoked, last_seen_at, created_at, updated_at)
@@ -118,12 +118,12 @@ async def issue_license(request: IssueRequest, db: DatabaseConnection, config: C
     )
 
 
-async def revoke_license(request: LicenseKeyRequest, db: DatabaseConnection) -> Dict[str, bool]:
+async def revoke_license(request: LicenseKeyRequest, db: DatabaseConnection, config: Config) -> Dict[str, bool]:
     """Revoke a license."""
     if not request.license_key:
         raise HTTPException(status_code=400, detail="license_key required")
     
-    if db.config.db_driver == "sqlite3":
+    if config.db_driver == "sqlite3":
         cursor = db.execute("""
             UPDATE licenses SET revoked = 1, updated_at = datetime('now') WHERE license_key = ?
         """, (request.license_key,))
@@ -144,7 +144,7 @@ async def validate_license(request: ValidateRequest, db: DatabaseConnection, con
     if not request.license_key or not request.machine_id:
         raise HTTPException(status_code=400, detail="license_key and machine_id required")
     
-    if db.config.db_driver == "sqlite3":
+    if config.db_driver == "sqlite3":
         row = db.execute_fetchone("""
             SELECT revoked, expires_at, machine_id FROM licenses WHERE license_key = ?
         """, (request.license_key,))
@@ -185,18 +185,18 @@ async def validate_license(request: ValidateRequest, db: DatabaseConnection, con
         return ValidateResponse(valid=False, revoked=True, expires_at=expires_at, reason="revoked")
     
     # Compare datetimes (both should be naive now)
-    if datetime.utcnow() > expires_at:
+    if datetime.now(timezone.utc).replace(tzinfo=None) > expires_at:
         return ValidateResponse(valid=False, expires_at=expires_at, reason="expired")
     
     return ValidateResponse(valid=True, revoked=False, expires_at=expires_at)
 
 
-async def heartbeat(request: LicenseKeyRequest, db: DatabaseConnection) -> Dict[str, bool]:
+async def heartbeat(request: LicenseKeyRequest, db: DatabaseConnection, config: Config) -> Dict[str, bool]:
     """Update license heartbeat."""
     if not request.license_key:
         raise HTTPException(status_code=400, detail="license_key required")
     
-    if db.config.db_driver == "sqlite3":
+    if config.db_driver == "sqlite3":
         cursor = db.execute("""
             UPDATE licenses SET last_seen_at = datetime('now'), updated_at = datetime('now') WHERE license_key = ?
         """, (request.license_key,))
@@ -227,7 +227,7 @@ async def update_license(request: UpdateLicenseRequest, db: DatabaseConnection, 
         except ValueError:
             raise HTTPException(status_code=400, detail="expires_at must be RFC3339")
         
-        if db.config.db_driver == "sqlite3":
+        if config.db_driver == "sqlite3":
             updates.append("expires_at = ?")
             params.append(parsed.isoformat())
         else:
@@ -236,7 +236,7 @@ async def update_license(request: UpdateLicenseRequest, db: DatabaseConnection, 
     
     if request.features is not None:
         features_json = json.dumps(request.features)
-        if db.config.db_driver == "sqlite3":
+        if config.db_driver == "sqlite3":
             updates.append("features = ?")
             params.append(features_json)
         else:
@@ -247,14 +247,14 @@ async def update_license(request: UpdateLicenseRequest, db: DatabaseConnection, 
         raise HTTPException(status_code=400, detail="no updates requested")
     
     # Add updated_at
-    if db.config.db_driver == "sqlite3":
+    if config.db_driver == "sqlite3":
         updates.append("updated_at = datetime('now')")
     else:
         updates.append("updated_at = NOW()")
     
     params.append(request.license_key)
     
-    query = f"UPDATE licenses SET {', '.join(updates)} WHERE license_key = {'?' if db.config.db_driver == 'sqlite3' else '%s'}"
+    query = f"UPDATE licenses SET {', '.join(updates)} WHERE license_key = {'?' if config.db_driver == 'sqlite3' else '%s'}"
     
     cursor = db.execute(query, tuple(params))
     
@@ -274,7 +274,7 @@ async def list_licenses(db: DatabaseConnection, config: Config) -> ListLicensesR
     
     licenses = []
     for row in cursor:
-        if db.config.db_driver == "sqlite3":
+        if config.db_driver == "sqlite3":
             features = json.loads(row[4]) if row[4] else {}
             expires_at = row[5]
             last_seen_at = row[7] if row[7] else None

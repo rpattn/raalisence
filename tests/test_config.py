@@ -36,29 +36,31 @@ signing:
     with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
         f.write(yaml_content)
         f.flush()
+        temp_path = f.name
+    
+    # Close the file before renaming
+    config_path = Path(temp_path)
+    config_dir = config_path.parent
+    target_path = config_dir / "config.yaml"
+    
+    try:
+        config_path.rename(target_path)
+        os.chdir(config_dir)
         
-        # Temporarily rename to config.yaml
-        config_path = Path(f.name)
-        config_dir = config_path.parent
-        target_path = config_dir / "config.yaml"
+        config = Config.load()
         
-        try:
-            config_path.rename(target_path)
-            os.chdir(config_dir)
-            
-            config = Config.load()
-            
-            assert config.server_addr == ":9090"
-            assert config.admin_api_key == "test-key"
-            assert config.db_driver == "sqlite3"
-            assert config.db_path == "/tmp/test.db"
-            assert config.signing_private_key_pem == "test-private"
-            assert config.signing_public_key_pem == "test-public"
-            
-        finally:
-            if target_path.exists():
-                target_path.unlink()
-            os.chdir(Path.cwd())
+        assert config.server_addr == ":9090"
+        assert config.admin_api_key == "test-key"
+        assert config.db_driver == "sqlite3"
+        assert config.db_path == "/tmp/test.db"
+        assert config.signing_private_key_pem == "test-private"
+        assert config.signing_public_key_pem == "test-public"
+        
+    finally:
+        # Cleanup
+        if target_path.exists():
+            target_path.unlink()
+        os.chdir(Path.cwd())
 
 
 def test_config_from_env():

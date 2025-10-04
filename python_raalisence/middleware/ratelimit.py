@@ -116,12 +116,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         try:
             from python_raalisence.server import config
             if config is None:
-                # No config available, skip rate limiting
+                # No config available, skip rate limiting but add headers
                 response = await call_next(request)
+                response.headers["RateLimit-Limit"] = "1"
+                response.headers["RateLimit-Remaining"] = "1"
                 return response
         except ImportError:
-            # Config not loaded yet, skip rate limiting
+            # Config not loaded yet, skip rate limiting but add headers
             response = await call_next(request)
+            response.headers["RateLimit-Limit"] = "1"
+            response.headers["RateLimit-Remaining"] = "1"
             return response
         
         key = rate_limit_key(request, config)

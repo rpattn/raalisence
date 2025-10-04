@@ -3,7 +3,7 @@
 import time
 import threading
 from typing import Dict, Optional
-from fastapi import HTTPException, Request
+from fastapi import HTTPException, Request, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from python_raalisence.config.config import Config
 
@@ -66,34 +66,43 @@ def admin_failure_key(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-class AdminAuthBearer(HTTPBearer):
-    """Admin authentication bearer token."""
+def verify_admin_auth(request: Request, config: Config) -> str:
+    """Verify admin authentication from request headers."""
+    auth_header = request.headers.get("Authorization")
     
-    def __init__(self, config: Config):
-        super().__init__()
-        self.config = config
-    
-    async def __call__(self, request: Request) -> str:
-        """Validate admin token."""
-        credentials: HTTPAuthorizationCredentials = await super().__call__(request)
-        
-        if not credentials:
-            key = admin_failure_key(request)
-            count, alert = failure_tracker.record_failure(key)
-            if alert:
-                print(f"ALERT admin_auth_failure remote={key} count={count} window={self.failure_window}s")
-            raise HTTPException(status_code=401, detail="unauthorized")
-        
-        if not self.config.admin_key_ok(credentials.credentials):
-            key = admin_failure_key(request)
-            count, alert = failure_tracker.record_failure(key)
-            if alert:
-                print(f"ALERT admin_auth_failure remote={key} count={count} window={self.failure_window}s")
-            raise HTTPException(status_code=401, detail="unauthorized")
-        
-        # Reset failure count on success
+    if not auth_header:
         key = admin_failure_key(request)
-        failure_tracker.reset(key)
-        
-        return credentials.credentials
+        count, alert = failure_tracker.record_failure(key)
+        if alert:
+            print(f"ALERT admin_auth_failure remote={key} count={count} window={failure_tracker.failure_window}s")
+        raise HTTPException(status_code=401, detail="unauthorized")
+    
+    if not auth_header.startswith("Bearer "):
+        key = admin_failure_key(request)
+        count, alert = failure_tracker.record_failure(key)
+        if alert:
+            print(f"ALERT admin_auth_failure remote={key} count={count} window={failure_tracker.failure_window}s")
+        raise HTTPException(status_code=401, detail="unauthorized")
+    
+    token = auth_header[7:]  # Remove "Bearer " prefix
+    
+    if not config.admin_key_ok(token):
+        key = admin_failure_key(request)
+        count, alert = failure_tracker.record_failure(key)
+        if alert:
+            print(f"ALERT admin_auth_failure remote={key} count={count} window={failure_tracker.failure_window}s")
+        raise HTTPException(status_code=401, detail="unauthorized")
+    
+    # Reset failure count on success
+    key = admin_failure_key(request)
+    failure_tracker.reset(key)
+    
+    return token
+
+
+def create_admin_auth_dependency(config: Config):
+    """Create admin authentication dependency for FastAPI."""
+    def admin_auth_dependency(request: Request) -> str:
+        return verify_admin_auth(request, config)
+    return admin_auth_dependency
 

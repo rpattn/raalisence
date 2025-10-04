@@ -4,7 +4,7 @@ import asyncio
 import signal
 import sys
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 from python_raalisence.config.config import Config
@@ -16,7 +16,7 @@ from python_raalisence.handlers.license import (
     update_license, list_licenses,
     IssueRequest, ValidateRequest, LicenseKeyRequest, UpdateLicenseRequest
 )
-from python_raalisence.middleware.auth import AdminAuthBearer
+from python_raalisence.middleware.auth import create_admin_auth_dependency
 from python_raalisence.middleware.logging import LoggingMiddleware
 from python_raalisence.middleware.ratelimit import RateLimitMiddleware
 
@@ -24,13 +24,13 @@ from python_raalisence.middleware.ratelimit import RateLimitMiddleware
 # Global variables
 config: Config = None
 db: DatabaseConnection = None
-admin_auth = None
+admin_auth_dependency = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
-    global config, db, admin_auth
+    global config, db, admin_auth_dependency
     
     # Startup
     config = Config.load()
@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI):
     run_migrations(db)
     
     # Configure admin auth
-    admin_auth = AdminAuthBearer(config)
+    admin_auth_dependency = create_admin_auth_dependency(config)
     
     print(f"raalisence listening on {config.server_addr} (driver={config.db_driver})")
     
@@ -72,7 +72,17 @@ app.add_middleware(RateLimitMiddleware)
 # Database dependency
 def get_db() -> DatabaseConnection:
     """Get database connection."""
+    if db is None:
+        raise HTTPException(status_code=500, detail="database not initialized")
     return db
+
+
+# Config dependency
+def get_config() -> Config:
+    """Get configuration."""
+    if config is None:
+        raise HTTPException(status_code=500, detail="configuration not initialized")
+    return config
 
 
 # Routes
@@ -82,68 +92,80 @@ async def health():
     return await health_check()
 
 
-def get_admin_auth():
-    """Get admin authentication dependency."""
-    if admin_auth is None:
+def get_admin_auth_dependency():
+    """Get admin authentication dependency for FastAPI."""
+    if admin_auth_dependency is None:
         raise HTTPException(status_code=500, detail="server not ready")
-    return admin_auth
+    return admin_auth_dependency
+
+def admin_auth_dep(request: Request) -> str:
+    """Admin authentication dependency function."""
+    if admin_auth_dependency is None:
+        raise HTTPException(status_code=500, detail="server not ready")
+    return admin_auth_dependency(request)
 
 
 @app.post("/api/v1/licenses/issue")
 async def issue_license_endpoint(
     request: IssueRequest,
-    _: str = Depends(get_admin_auth),
-    db_conn: DatabaseConnection = Depends(get_db)
+    _: str = Depends(admin_auth_dep),
+    db_conn: DatabaseConnection = Depends(get_db),
+    cfg: Config = Depends(get_config)
 ):
     """Issue a new license."""
-    return await issue_license(request, db_conn, config)
+    return await issue_license(request, db_conn, cfg)
 
 
 @app.post("/api/v1/licenses/revoke")
 async def revoke_license_endpoint(
     request: LicenseKeyRequest,
-    _: str = Depends(get_admin_auth),
-    db_conn: DatabaseConnection = Depends(get_db)
+    _: str = Depends(admin_auth_dep),
+    db_conn: DatabaseConnection = Depends(get_db),
+    cfg: Config = Depends(get_config)
 ):
     """Revoke a license."""
-    return await revoke_license(request, db_conn)
+    return await revoke_license(request, db_conn, cfg)
 
 
 @app.post("/api/v1/licenses/validate")
 async def validate_license_endpoint(
     request: ValidateRequest,
-    db_conn: DatabaseConnection = Depends(get_db)
+    db_conn: DatabaseConnection = Depends(get_db),
+    cfg: Config = Depends(get_config)
 ):
     """Validate a license."""
-    return await validate_license(request, db_conn, config)
+    return await validate_license(request, db_conn, cfg)
 
 
 @app.post("/api/v1/licenses/heartbeat")
 async def heartbeat_endpoint(
     request: LicenseKeyRequest,
-    db_conn: DatabaseConnection = Depends(get_db)
+    db_conn: DatabaseConnection = Depends(get_db),
+    cfg: Config = Depends(get_config)
 ):
     """Update license heartbeat."""
-    return await heartbeat(request, db_conn)
+    return await heartbeat(request, db_conn, cfg)
 
 
 @app.post("/api/v1/licenses/update")
 async def update_license_endpoint(
     request: UpdateLicenseRequest,
-    _: str = Depends(get_admin_auth),
-    db_conn: DatabaseConnection = Depends(get_db)
+    _: str = Depends(admin_auth_dep),
+    db_conn: DatabaseConnection = Depends(get_db),
+    cfg: Config = Depends(get_config)
 ):
     """Update a license."""
-    return await update_license(request, db_conn, config)
+    return await update_license(request, db_conn, cfg)
 
 
 @app.get("/api/v1/licenses")
 async def list_licenses_endpoint(
-    _: str = Depends(get_admin_auth),
-    db_conn: DatabaseConnection = Depends(get_db)
+    _: str = Depends(admin_auth_dep),
+    db_conn: DatabaseConnection = Depends(get_db),
+    cfg: Config = Depends(get_config)
 ):
     """List all licenses."""
-    return await list_licenses(db_conn, config)
+    return await list_licenses(db_conn, cfg)
 
 
 # Static files

@@ -2,7 +2,7 @@
 
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -31,7 +31,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
             client_ip = xff.split(',')[0].strip()
         
         # Log request
-        timestamp = datetime.utcfromtimestamp(start_time).isoformat() + "Z"
+        timestamp = datetime.fromtimestamp(start_time, tz=timezone.utc).isoformat()
         print(f"ts={timestamp} req_id={request_id} method={request.method} path={request.url.path} "
               f"status={response.status_code} bytes={len(response.body) if hasattr(response, 'body') else 0} "
               f"dur={duration:.6f}s remote={client_ip}")
