@@ -1,0 +1,23 @@
+# Core web framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
+# Database drivers
+asyncpg>=0.29.0
+psycopg2-binary>=2.9.7
+
+# Cryptography
+cryptography>=41.0.0
+bcrypt>=4.0.0
+
+# Configuration and utilities
+PyYAML>=6.0.1
+pydantic>=2.5.0
+
+# Development dependencies
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.7.0
+

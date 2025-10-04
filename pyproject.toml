@@ -1,0 +1,57 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "raalisence"
+version = "0.1.0"
+description = "License server implementation in Python"
+authors = [
+    {name = "raalisence", email = "admin@example.com"},
+]
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "asyncpg>=0.29.0",
+    "psycopg2-binary>=2.9.7",
+    "cryptography>=41.0.0",
+    "bcrypt>=4.0.0",
+    "PyYAML>=6.0.1",
+    "pydantic>=2.5.0",
+]
+requires-python = ">=3.9"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.7.0",
+]
+
+[project.scripts]
+raalisence = "python_raalisence.server:main"
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.7.0",
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py39']
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+

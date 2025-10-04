@@ -1,13 +1,13 @@
 server:
   addr: ":8080"
   # bcrypt hashes of admin API tokens. Generate with:
-  #   go run ./scripts/hash-admin-key.go <token>
+  #   python scripts/gen.py <token>
   admin_api_key_hashes:
     - "$2a$10$exampleplaceholderhashforadmin"
 
 db:
-  driver: "pgx"   # or "sqlite3"
-  dsn: "postgres://postgres:postgres@localhost:5432/raalisence?sslmode=disable"
+  driver: "postgresql"   # or "sqlite3"
+  dsn: "postgresql://postgres:postgres@localhost:5432/raalisence"
   path: "./raalisence.db"   # if using sqlite3
 
 signing:
