@@ -6,7 +6,7 @@ server:
     - "$2a$10$exampleplaceholderhashforadmin"
 
 db:
-  driver: "postgresql"   # or "sqlite3"
+  driver: "sqlite3"   # or "postgresql"
   dsn: "postgresql://postgres:postgres@localhost:5432/raalisence"
   path: "./raalisence.db"   # if using sqlite3
 
